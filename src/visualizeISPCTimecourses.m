@@ -431,6 +431,245 @@ function visualizeISPCTimecourses(EEG, ispc_results, segments, config)
             warning('Failed to save top channels figure: %s', err.message);
         end
     end
+    
+    %% NEW ADDITION: ISPC Time Course with Transition Regions
+    % Calculate half window size in samples for transition region marking
+    half_window_samples = floor(config.window_size * EEG.srate / 2);
+
+    % Create a figure for average ISPC across regions with transition shading
+    figure('Name', 'ISPC Time Course with Transition Regions', 'Position', [100, 100, 1200, 600], 'visible', 'off');
+
+    % Plot the same data as in the regional average figure
+    % Calculate and plot overall average across all channels
+    avg_ispc = mean(ispc_results(1:EEG.nbchan-1, plot_range), 1);
+    plot(plot_time, avg_ispc, 'k-', 'LineWidth', 2, 'DisplayName', 'All Channels');
+    hold on;
+
+    % Add regional plots if you have them (reused from above)
+    if isfield(config, 'regions') && ~isempty(fieldnames(config.regions))
+        reg_colors = {'b', 'r', 'g', 'm', 'c'};
+        color_idx = 1;
+        
+        % Process all regions found in the config
+        region_names = fieldnames(config.regions);
+        for r = 1:length(region_names)
+            region_name = region_names{r};
+            
+            % Find channel indices for this region
+            region_channels = config.regions.(region_name);
+            region_indices = findChannelIndices(EEG, region_channels);
+            
+            % Format the region name for display
+            display_name = strrep(region_name, '_', ' ');
+            display_name = [upper(display_name(1)) display_name(2:end)];
+            
+            if ~isempty(region_indices)
+                % Calculate average ISPC for this region
+                region_avg = mean(ispc_results(region_indices, plot_range), 1);
+                
+                % Plot with cycling through colors
+                current_color = reg_colors{mod(color_idx-1, length(reg_colors))+1};
+                plot(plot_time, region_avg, '-', 'Color', current_color, ...
+                    'LineWidth', 1.5, 'DisplayName', display_name);
+                color_idx = color_idx + 1;
+            end
+        end
+    end
+
+    % Find all segment boundaries
+    boundaries = [];
+    for stim_id = stim_ids
+        % Get segments for this stimulation
+        if length(stim_ids) > 1
+            suffix = ['_' num2str(stim_id)];
+            segments_for_stim = fieldnames(segments);
+            segments_for_stim = segments_for_stim(endsWith(segments_for_stim, suffix));
+        else
+            suffix = '';
+            segments_for_stim = fieldnames(segments);
+        end
+        
+        % Extract all start and end points
+        for s = 1:length(segments_for_stim)
+            segment = segments_for_stim{s};
+            segment_range = segments.(segment);
+            
+            % Add start and end to boundaries if not already there
+            if ~ismember(segment_range(1), boundaries)
+                boundaries = [boundaries, segment_range(1)];
+            end
+            if ~ismember(segment_range(2), boundaries)
+                boundaries = [boundaries, segment_range(2)];
+            end
+        end
+    end
+
+    % Sort boundaries
+    boundaries = sort(boundaries);
+
+    % Add protocol start/end to boundaries if they aren't already included
+    if ~ismember(protocol_start, boundaries)
+        boundaries = [protocol_start, boundaries];
+    end
+    if ~ismember(protocol_end, boundaries)
+        boundaries = [boundaries, protocol_end];
+    end
+    boundaries = sort(boundaries);
+
+    % Determine shading regions for transitions
+    fprintf('Identifying transition regions for ISPC visualization...\n');
+    for i = 1:length(boundaries)
+        boundary = boundaries(i);
+        
+        % Skip if out of plot range
+        if boundary < plot_range(1) || boundary > plot_range(end)
+            continue;
+        end
+        
+        % Calculate transition region around this boundary
+        trans_start = max(plot_range(1), boundary - half_window_samples);
+        trans_end = min(plot_range(end), boundary + half_window_samples);
+        
+        % Calculate transition region time values
+        trans_time_start = rel_time(trans_start);
+        trans_time_end = rel_time(trans_end);
+        
+        % Create shaded region
+        x = [trans_time_start, trans_time_end, trans_time_end, trans_time_start];
+        y = [0, 0, 1, 1];
+        patch(x, y, [0.8, 0.8, 0.8], 'FaceAlpha', 0.3, 'EdgeColor', 'none');
+        
+        % Add text label for transition
+        text(rel_time(boundary), 0.05, 'Transition', 'FontSize', 8, 'Color', 'r', ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
+        
+        fprintf('Added transition region shading around sample %d (%.2f - %.2f seconds)\n', ...
+            boundary, trans_time_start, trans_time_end);
+    end
+
+    % Special case: Check for beginning of recording
+    if half_window_samples > plot_range(1)
+        % There's a partial window at the beginning
+        trans_end = min(plot_range(1) + half_window_samples, plot_range(end));
+        
+        % Calculate transition region time values
+        trans_time_start = rel_time(plot_range(1));
+        trans_time_end = rel_time(trans_end);
+        
+        % Create shaded region
+        x = [trans_time_start, trans_time_end, trans_time_end, trans_time_start];
+        y = [0, 0, 1, 1];
+        patch(x, y, [0.8, 0.8, 0.8], 'FaceAlpha', 0.3, 'EdgeColor', 'none');
+        
+        % Add text label for partial window
+        text(trans_time_start + (trans_time_end - trans_time_start)/2, 0.05, 'Partial Window', ...
+            'FontSize', 8, 'Color', 'r', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
+        
+        fprintf('Added partial window shading at beginning (%.2f - %.2f seconds)\n', ...
+            trans_time_start, trans_time_end);
+    end
+
+    % Special case: Check for end of recording
+    if plot_range(end) + half_window_samples > EEG.pnts
+        % There's a partial window at the end
+        trans_start = max(plot_range(end) - half_window_samples, plot_range(1));
+        
+        % Calculate transition region time values
+        trans_time_start = rel_time(trans_start);
+        trans_time_end = rel_time(plot_range(end));
+        
+        % Create shaded region
+        x = [trans_time_start, trans_time_end, trans_time_end, trans_time_start];
+        y = [0, 0, 1, 1];
+        patch(x, y, [0.8, 0.8, 0.8], 'FaceAlpha', 0.3, 'EdgeColor', 'none');
+        
+        % Add text label for partial window
+        text(trans_time_start + (trans_time_end - trans_time_start)/2, 0.05, 'Partial Window', ...
+            'FontSize', 8, 'Color', 'r', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
+        
+        fprintf('Added partial window shading at end (%.2f - %.2f seconds)\n', ...
+            trans_time_start, trans_time_end);
+    end
+
+    % Add segment markers (as in the original plots)
+    for stim_id = stim_ids
+        % Get segments for this stimulation
+        if length(stim_ids) > 1
+            suffix = ['_' num2str(stim_id)];
+            segments_for_stim = fieldnames(segments);
+            segments_for_stim = segments_for_stim(endsWith(segments_for_stim, suffix));
+        else
+            suffix = '';
+            segments_for_stim = fieldnames(segments);
+        end
+        
+        for s = 1:length(segments_for_stim)
+            segment = segments_for_stim{s};
+            segment_range = segments.(segment);
+            
+            % Convert to relative time
+            segment_start_rel = rel_time(segment_range(1));
+            segment_end_rel = rel_time(segment_range(2));
+            
+            % Only add markers if segment is within the plot range
+            if segment_start_rel >= plot_time(1) && segment_start_rel <= plot_time(end)
+                % Add vertical lines
+                color_idx = mod(s-1, length(colors))+1;
+                xline(segment_start_rel, '--', 'Color', colors{color_idx});
+                
+                % Add label for segment start
+                segment_base = strrep(segment, suffix, '');
+                segment_label = strrep(segment_base, '_', ' ');
+                if length(stim_ids) > 1
+                    segment_label = [segment_label ' ' num2str(stim_id)];
+                end
+                
+                text(segment_start_rel, 0.95, segment_label, ...
+                    'HorizontalAlignment', 'center', 'VerticalAlignment', 'top', ...
+                    'Color', colors{color_idx}, 'FontSize', 8);
+            end
+            
+            % Add end marker if within plot range
+            if segment_end_rel >= plot_time(1) && segment_end_rel <= plot_time(end)
+                xline(segment_end_rel, '--', 'Color', colors{color_idx});
+            end
+        end
+    end
+
+    % Add a legend explaining the shaded regions
+    legend_entry = findobj(gca, 'DisplayName', 'All Channels');
+    if ~isempty(legend_entry)
+        % Add a fake patch for the legend
+        h_patch = patch([0 0 0 0], [0 0 0 0], [0.8, 0.8, 0.8], 'FaceAlpha', 0.3, 'EdgeColor', 'none', ...
+            'DisplayName', 'Transition Regions');
+        
+        % Show legend
+        legend('Location', 'eastoutside');
+    end
+
+    % Add explanatory note
+    dim = [0.15 0.01 0.7 0.05];
+    str = ['Note: Shaded regions indicate transition areas where the ISPC calculation window ',...
+           'includes data from multiple segments. The window size is ' ...
+           num2str(config.window_size) ' seconds.'];
+    annotation('textbox', dim, 'String', str, 'FitBoxToText', 'on', 'BackgroundColor', [1 1 1 0.7]);
+
+    % Final figure setup
+    title('ISPC Time Course with Transition Regions Highlighted');
+    xlabel('Time (s from protocol start)');
+    ylabel('ISPC');
+    ylim([0 1]);
+    xlim([0 plot_time(end) - plot_time(1)]);
+    grid on;
+
+    % Save the new figure
+    try
+        save_path = fullfile(config.results_dir, 'ispc_timecourse_with_transitions.png');
+        saveas(gcf, save_path);
+        fprintf('Saved figure with transition regions to: %s\n', save_path);
+    catch err
+        warning('Failed to save figure: %s', err.message);
+    end
 end
 
 % Helper function to find channel indices from labels
