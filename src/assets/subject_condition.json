@@ -1,0 +1,23 @@
+{
+  "subjects": [
+    {"id": "101", "condition": "ACTIVE"},
+    {"id": "102", "condition": "ACTIVE"},
+    {"id": "107", "condition": "SHAM"},
+    {"id": "108", "condition": "ACTIVE"},
+    {"id": "109", "condition": "ACTIVE"},
+    {"id": "110", "condition": "SHAM"},
+    {"id": "111", "condition": "SHAM"},
+    {"id": "112", "condition": "ACTIVE"},
+    {"id": "114", "condition": "ACTIVE"},
+    {"id": "115", "condition": "ACTIVE"},
+    {"id": "116", "condition": "ACTIVE"},
+    {"id": "117", "condition": "ACTIVE"},
+    {"id": "119", "condition": "SHAM"},
+    {"id": "120", "condition": "ACTIVE"},
+    {"id": "121", "condition": "ACTIVE"},
+    {"id": "122", "condition": "ACTIVE"},
+    {"id": "127", "condition": "SHAM"},
+    {"id": "129", "condition": "ACTIVE"},
+    {"id": "132", "condition": "ACTIVE"}
+  ]
+}
