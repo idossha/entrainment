@@ -1,0 +1,69 @@
+
+\documentclass[11pt,a4paper]{article}
+
+% Essential packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+% Minimal styling
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=blue,
+    citecolor=blue,
+    urlcolor=blue,
+}
+
+% Custom title formatting
+\usepackage{titlesec}
+\titleformat*{\section}{\Large\bfseries}
+\titleformat*{\subsection}{\large\bfseries}
+\titleformat*{\subsubsection}{\normalsize\bfseries}
+
+% Document info
+\title{\vspace{-2em}Document Title}
+\author{Author Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This is a clean, minimalist template designed for professional documents. It provides good readability while maintaining a modern appearance.
+
+\section{ISPC Formula}
+The Intersite Phase Clustering (ISPC) is defined as:
+
+\begin{equation}
+\text{ISPC of } f = \left| \frac{1}{n} \sum_{t=1}^{n} e^{i(\phi_{xt} - \phi_{yt})} \right|
+\end{equation}
+
+Where:
+\begin{itemize}
+    \item $n$ is the number of time points
+    \item $\phi_{xt}$ is the phase angle of signal $x$ at time $t$
+    \item $\phi_{yt}$ is the phase angle of signal $y$ at time $t$
+\end{itemize}
+
+It is the average of phase angle differences between signals over time. \\
+
+Implementation in MATLAB:
+
+\begin{verbatim}
+ISPC = abs(mean(exp(1i * (angles1 - angles2))));
+\end{verbatim}
+
+
+ISPC can be computed using a over time using a sliding window approach in a similar manner to the way FFT is computed in short-time FFT. The selection of the time segment length depends on the frequency and task. Longer segments gives better signal-to-noise ration but has worse time resolution. \\
+
+
+\end{document}
+
+\text{ISPC of } f = \left| \frac{1}{n} \sum_{t=1}^{n} e^{i(\phi_{xt} - \phi_{yt})} \right
