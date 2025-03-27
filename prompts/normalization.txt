@@ -1,0 +1,65 @@
+
+okay. i have a job to do.
+
+i want to try to normalize the ISPC calculation per dataset instead of looking at it directly. I am going to give you the logic, but i want you to implement it in code.
+
+The logic is:
+
+compute a global mean ISPC value for the entire dataset across the entire time and all electrode. It should be a single value. 
+
+express ISPC value of each stim-segment as a percentage of this mean. Meaning Normalized_ISPC_pre-stim = ISPC_pre-stim / total_mean_ISPC.
+
+Then, instead of looking at the difference between ISPC between stim stages, we compute the percent change based on these normlized values. %Δ=[(Normalized_ISPC_late-stim) - (Normalized_ISPC_pre-stim) / Normalized_ISPC_pre-stim ] * 100
+
+to look at the topographic changes normalize each channel by the total ISPC mean. Z-score each channel within a subject to emphasize deviations from their own typical topography Then compute percent change per channel: This helps you see if some regions change more than others while controlling for individual variability.
+
+this is how i want you to implement it:
+
+have a sub-dir under src named 'normalize'
+
+the process should be independent of the main.m meaning it can be run after initial results already collected. 
+
+there should be one script that loads the .set files and calculates global ISPC value.
+
+there should be another script that deals with the normalized ISPC in time domain.
+
+there should be another one for topographic calculation and visualization
+
+as a reminder, in the project there are multiple subjects with multiple sessions. each session has a dataset, and for each dataset there are multiple protocols. each protocol also known as a stimulation has a corresponding .mat file that has the following strcutre:
+
+Checking file: /Volumes/Ido/analyze/101/N1/output/entrainment_101_N1/stim_1/results.mat
+
+Loading file...
+
+Fields in results.mat:
+
+    {'ispc_results'     }
+
+    {'stim_segments'    }
+
+    {'this_stim_samples'}
+
+ispc_results size: [198 929783]
+
+stim_segments found, contains:
+
+    {'pre_stim'  }
+
+    {'early_stim'}
+
+    {'late_stim' }
+
+    {'post_stim' }
+
+
+
+---
+
+follow up:
+
+please break this big script into:
+
+topogrpahic calculation
+topographic visualization
+group average calculation
+group average visualization
