@@ -30,7 +30,7 @@ function config = setConfiguration(subject_id, session_id, experiment_path)
     
     % EEG data settings
     config.eeg_filename = fullfile(config.data_path, sprintf('Strength_%s_%s_forSW.set', subject_id, session_id));
-    config.target_srate = 50; % Target sampling rate in Hz
+    config.target_srate = 25; % Target sampling rate in Hz
     
     % Stimulus parameters
     config.stim_freq = 1; % 1Hz stimulation

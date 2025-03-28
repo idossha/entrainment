@@ -1,6 +1,6 @@
 %% Main script for EEG entrainment analysis across multiple subjects
 % This script analyzes the entrainment of EEG data to an exogenous electrical stimulus
-% for multiple subjects and sessions using normalized ISPC calculation approach
+% for multiple subjects and sessions.
 
 clear all; close all;
 
@@ -9,9 +9,8 @@ clear all; close all;
 experiment_path = '/Volumes/Ido/analyze';
 
 % Define subjects and nights
-subjects = {'101', '102','107','108','109','110','111','112','114','115','116','117','119','120','121','122','127','132'};
-% subjects = {'101'};
-% subjects = {'101', '102', '107', '110'};
+% subjects = {'101', '102','107','108','109','110','111','112','114','115','116','117','119','120','121','122','127','132'};
+subjects = {'101'};
 nights = {'N1'};
 
 %% Add EEGLAB path and initialize
@@ -59,19 +58,6 @@ for subjIdx = 1:length(subjects)
             fprintf('Adding stimulus signal for subject %s, session %s\n', whichSubj, whichSess);
             [EEG, stim_channel_idx] = addStimulusSignal(EEG, config.stim_freq);
             
-            % Calculate global ISPC across the entire dataset first
-            fprintf('Calculating global ISPC for subject %s, session %s\n', whichSubj, whichSess);
-            [globalISPC, globalStd] = calculateGlobalISPC(EEG, stim_channel_idx, config);
-            
-            % Save global ISPC for this subject
-            global_file = fullfile(config.results_dir, 'global_ispc.mat');
-            try
-                save(global_file, 'globalISPC', 'globalStd');
-                fprintf('Saved global ISPC to: %s\n', global_file);
-            catch err
-                warning('Failed to save global ISPC: %s', err.message);
-            end
-            
             % Determine how many stimulation periods we found
             num_stims = size(stim_samples, 1);
             
@@ -85,8 +71,6 @@ for subjIdx = 1:length(subjects)
                 
                 % Store results for each stimulation
                 all_ispc_results = cell(num_stims, 1);
-                all_norm_ispc_results = cell(num_stims, 1);
-                all_z_scored_ispc = cell(num_stims, 1);
                 all_stim_segments = cell(num_stims, 1);
                 
                 for stim_idx = 1:num_stims
@@ -142,25 +126,19 @@ for subjIdx = 1:length(subjects)
                     % Calculate ISPC between each EEG channel and the stimulus (only for relevant time range)
                     [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel_idx, time_range, stim_config);
                     
-                    % Normalize ISPC values using the global ISPC value
-                    [norm_ispc_results, z_scored_ispc] = normalizeISPC(ispc_results, stim_segments, globalISPC, globalStd);
-                    
                     % Store results for this stimulation
                     all_ispc_results{stim_idx} = ispc_results;
-                    all_norm_ispc_results{stim_idx} = norm_ispc_results;
-                    all_z_scored_ispc{stim_idx} = z_scored_ispc;
                     all_stim_segments{stim_idx} = stim_segments;
                     
-                    % Create overview visualization (using the original data for reference)
+                    % Create visualizations for this stimulation
                     visualizeISPCOverview(EEG, ispc_results, phases, filtered_data, stim_segments, this_stim_samples, stim_channel_idx, stim_config);
-                    
-                    % Create visualizations with normalized data
-                    visualizeNormalizedISPC(EEG, ispc_results, norm_ispc_results, z_scored_ispc, stim_segments, stim_config);
+                    visualizeISPCTopoplots(EEG, ispc_results, stim_segments, stim_config);
+                    visualizeISPCTimecourses(EEG, ispc_results, stim_segments, stim_config);
                     
                     % Save results for this stimulation
                     results_file = fullfile(stim_dir, 'results.mat');
                     try
-                        save(results_file, 'ispc_results', 'norm_ispc_results', 'z_scored_ispc', 'globalISPC', 'globalStd', 'stim_segments', 'this_stim_samples', '-v7.3');
+                        save(results_file, 'ispc_results', 'stim_segments', 'this_stim_samples', '-v7.3');
                         fprintf('Saved results to: %s\n', results_file);
                     catch err
                         warning('Failed to save results: %s', err.message);
@@ -173,30 +151,28 @@ for subjIdx = 1:length(subjects)
                 % Create summary visualizations comparing all stimulations
                 createStimulationComparison(EEG, all_ispc_results, all_stim_segments, config);
                 
-                % Create normalized aggregate topoplots across protocols
+                % Create aggregate topoplots showing conditions and differences collapsed across protocols
+                % Save subject-level average data for group analysis
                 config.subject_id = whichSubj;
-                [norm_final_topos, pct_change_topos] = createNormalizedAggregateTopoplots(EEG, all_ispc_results, all_norm_ispc_results, all_stim_segments, config);
-
-
+                [final_topos, diff_topos] = createAggregateTopoplots(EEG, all_ispc_results, all_stim_segments, config, true);
+                
                 fprintf('\nAnalysis complete for subject %s, session %s. Results saved in %s\n', ...
                     whichSubj, whichSess, config.results_dir);
             else
-                % Process all stimulations together
+                % Process all stimulations together (original behavior)
                 fprintf('Processing all stimulation instances together for subject %s, session %s\n', ...
                     whichSubj, whichSess);
                 
                 % Calculate ISPC between each EEG channel and the stimulus
-                [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel_idx, [], config);
-                
-                % Normalize ISPC values
-                [norm_ispc_results, z_scored_ispc] = normalizeISPC(ispc_results, segments, globalISPC, globalStd);
+                [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel_idx, config);
                 
                 % Create visualizations
                 visualizeISPCOverview(EEG, ispc_results, phases, filtered_data, segments, stim_samples, stim_channel_idx, config);
-                visualizeNormalizedISPC(EEG, ispc_results, norm_ispc_results, z_scored_ispc, segments, config);
+                visualizeISPCTopoplots(EEG, ispc_results, segments, config);
+                visualizeISPCTimecourses(EEG, ispc_results, segments, config);
                 
                 % Save results
-                save(fullfile(config.results_dir, 'results.mat'), 'ispc_results', 'norm_ispc_results', 'z_scored_ispc', 'globalISPC', 'globalStd', 'segments', 'stim_samples', '-v7.3');
+                save(fullfile(config.results_dir, 'results.mat'), 'ispc_results', 'segments', 'stim_samples', '-v7.3');
                 
                 fprintf('\nAnalysis complete for subject %s, session %s. Results saved to %s\n', ...
                     whichSubj, whichSess, config.results_dir);
@@ -213,34 +189,15 @@ for subjIdx = 1:length(subjects)
 end
 
 fprintf('\n\n========== Analysis complete for all subjects ==========\n\n');
-fprintf('\n\n========== Interpolating subjects for consistent channel structure ==========\n\n');
-
-try
-    % Run interpolation to ensure consistent channel structure
-    interpolateNormalizedSubjects(experiment_path, nights{1});
-    fprintf('Interpolation complete for all subjects.\n');
-catch err
-    fprintf('Error in subject interpolation: %s\n', err.message);
-    disp(err.stack);
-end
-
-fprintf('\n\n========== Running Group Analysis with Interpolated Data ==========\n\n');
-try
-    % Run group-level analysis with interpolated data
-    runGroupAnalysisWithInterpolatedData(experiment_path, nights{1});
-    runProtocolGroupAnalysisWithInterpolation(experiment_path, nights{1}, 5); % Analyze up to 5 stimulations
-    compareActiveAndShamTopoplots(experiment_path, nights{1});
-    fprintf('Group-level interpolated analysis complete.\n');
-catch err
-    fprintf('Error in group-level interpolated analysis: %s\n', err.message);
-    disp(err.stack);
-end
 
 % Display information about utility functions
 fprintf('\nUtility Functions Available:\n');
-fprintf('1. interpolateNormalizedSubjects(experiment_path, session_id)\n');
-fprintf('   - Interpolates subjects to ensure consistent channel structure\n');
-fprintf('2. runGroupAnalysisWithInterpolatedData(experiment_path, session_id)\n');
-fprintf('   - Runs group analysis with interpolated normalized data\n');
-fprintf('3. runProtocolGroupAnalysisWithInterpolation(experiment_path, session_id, max_stim)\n');
-fprintf('   - Runs protocol-specific group analysis with interpolated data\n');
+fprintf('1. visualizeISPCSteps(EEG, timeRange, config)\n');
+fprintf('   - Creates a detailed visualization of ISPC calculation steps\n');
+fprintf('   - Example: visualizeISPCSteps(EEG, [30, 40], config);\n\n');
+fprintf('2. createISPCAnimation(EEG, timeRange, outputFile, config)\n');
+fprintf('   - Creates an animation of phase synchronization\n');
+fprintf('   - Example: createISPCAnimation(EEG, [30, 40], ''my_animation.gif'', config);\n\n');
+fprintf('3. visualizeWindowSliding(EEG, timeRange, config)\n');
+fprintf('   - Visualizes how the sliding window affects ISPC calculation\n');
+fprintf('   - Example: visualizeWindowSliding(EEG, [30, 35], config);\n\n');
