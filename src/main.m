@@ -5,13 +5,9 @@
 clear all; close all;
 
 %% Define experiment settings
-% Base experiment path
 experiment_path = '/Volumes/Ido/analyze';
-
-% Define subjects and nights
-subjects = {'101', '102','107','108','109','110','111','112','114','115','116','117','119','120','121','122','127','132'};
-% subjects = {'101'};
-% subjects = {'101', '102', '107', '110'};
+% subjects = {'101', '102','107','108','109','110','111','112','114','115','116','117','119','120','121','122','127','132'};
+subjects = {'101'};
 nights = {'N1'};
 
 %% Add EEGLAB path and initialize
@@ -19,228 +15,146 @@ eeglab_path = '/Users/idohaber/Documents/MATLAB/eeglab2024.0/';
 addpath(eeglab_path);
 eeglab nogui;
 
-%% Loop through each subject and night
+%% Process each subject
 for subjIdx = 1:length(subjects)
     for nightIdx = 1:length(nights)
         try
-            %% Define Current Subject and Night
             whichSubj = subjects{subjIdx};
             whichSess = nights{nightIdx};
-            
-            % Display current subject/session
             fprintf('\n\n========== Processing Subject %s, Session %s ==========\n\n', whichSubj, whichSess);
             
-            %% Check if file exists
             eeg_filename = fullfile(experiment_path, whichSubj, whichSess, sprintf('Strength_%s_%s_forSW.set', whichSubj, whichSess));
             if ~exist(eeg_filename, 'file')
                 fprintf('File not found: %s. Skipping this subject/session.\n', eeg_filename);
                 continue;
             end
             
-            %% Set configuration for this subject/session
             config = setConfiguration(whichSubj, whichSess, experiment_path);
+            addpath(config.src_path, config.module_path, config.utilities_path);
             
-            % Add required paths (from the config)
-            addpath(config.src_path);
-            addpath(config.module_path);
-            addpath(config.utilities_path);
-            
-            %% Execute analysis pipeline for this subject/session
-            
-            % Load EEG data and possibly resample
-            fprintf('Loading EEG data for subject %s, session %s\n', whichSubj, whichSess);
             EEG = loadEEGData(config.eeg_filename, config.target_srate);
-            
-            % Find all stimulation events and define segments
-            fprintf('Finding stimulation events for subject %s, session %s\n', whichSubj, whichSess);
             [segments, stim_samples] = findEvents(EEG, config);
-            
-            % Generate stimulus signal and add it to the EEG data
-            fprintf('Adding stimulus signal for subject %s, session %s\n', whichSubj, whichSess);
             [EEG, stim_channel_idx] = addStimulusSignal(EEG, config.stim_freq);
             
-            % Calculate global ISPC across the entire dataset first
-            fprintf('Calculating global ISPC for subject %s, session %s\n', whichSubj, whichSess);
             [globalISPC, globalStd] = calculateGlobalISPC(EEG, stim_channel_idx, config);
+            save(fullfile(config.results_dir, 'global_ispc.mat'), 'globalISPC', 'globalStd');
             
-            % Save global ISPC for this subject
-            global_file = fullfile(config.results_dir, 'global_ispc.mat');
-            try
-                save(global_file, 'globalISPC', 'globalStd');
-                fprintf('Saved global ISPC to: %s\n', global_file);
-            catch err
-                warning('Failed to save global ISPC: %s', err.message);
-            end
-            
-            % Determine how many stimulation periods we found
             num_stims = size(stim_samples, 1);
+            fprintf('Processing %d stimulation instances for subject %s, session %s\n', num_stims, whichSubj, whichSess);
             
-            % If we found multiple stimulation instances and are processing them separately
-            if num_stims > 1 && config.process_all_instances
-                fprintf('Processing %d stimulation instances separately for subject %s, session %s\n', ...
-                    num_stims, whichSubj, whichSess);
+            % Get all segment names and initialize storage
+            all_segment_names = fieldnames(segments);
+            all_ispc_results = cell(num_stims, 1);
+            all_norm_ispc_results = cell(num_stims, 1);
+            all_z_scored_ispc = cell(num_stims, 1);
+            all_stim_segments = cell(num_stims, 1);
+            
+            % Keep track of valid stimulation indices
+            valid_stim_indices = [];
+            
+            % Process each stimulation separately
+            for stim_idx = 1:num_stims
+                fprintf('\n===== Processing Stimulation %d/%d =====\n', stim_idx, num_stims);
                 
-                % Get all segment names
-                all_segment_names = fieldnames(segments);
+                % Check if the stimulation is long enough
+                stim_start = stim_samples(stim_idx, 1);
+                stim_end = stim_samples(stim_idx, 2);
+                stim_duration_samples = stim_end - stim_start;
+                stim_duration_seconds = stim_duration_samples / EEG.srate;
                 
-                % Store results for each stimulation
-                all_ispc_results = cell(num_stims, 1);
-                all_norm_ispc_results = cell(num_stims, 1);
-                all_z_scored_ispc = cell(num_stims, 1);
-                all_stim_segments = cell(num_stims, 1);
-                
-                for stim_idx = 1:num_stims
-                    fprintf('\n===== Processing Stimulation %d/%d for Subject %s, Session %s =====\n', ...
-                        stim_idx, num_stims, whichSubj, whichSess);
-                    
-                    % Create directory for this stimulation instance
-                    stim_dir = fullfile(config.results_dir, ['stim_' num2str(stim_idx)]);
-                    if ~exist(stim_dir, 'dir')
-                        [success, msg] = mkdir(stim_dir);
-                        if ~success
-                            error('Failed to create directory %s: %s', stim_dir, msg);
-                        end
-                        fprintf('Created directory: %s\n', stim_dir);
-                    end
-                    
-                    % Find segments for this stimulation
-                    stim_segments = struct();
-                    for i = 1:length(all_segment_names)
-                        segment_name = all_segment_names{i};
-                        if endsWith(segment_name, ['_' num2str(stim_idx)]) || ...
-                           (~contains(segment_name, '_') && stim_idx == 1)
-                            % Extract base segment name (without numerical suffix)
-                            if contains(segment_name, '_')
-                                parts = strsplit(segment_name, '_');
-                                base_name = strjoin(parts(1:end-1), '_');
-                            else
-                                base_name = segment_name;
-                            end
-                            
-                            % Store with the base name for cleaner visualization
-                            stim_segments.(base_name) = segments.(segment_name);
-                        end
-                    end
-                    
-                    % Extract samples for just this stimulation
-                    this_stim_samples = stim_samples(stim_idx, :);
-                    
-                    % Temporarily update config to store results in stimulation subdirectory
-                    stim_config = config;
-                    stim_config.results_dir = stim_dir;
-                    
-                    % Define the time range for this stimulation (from pre-stim start to post-stim end)
-                    all_segment_bounds = zeros(length(fieldnames(stim_segments)), 2);
-                    segment_names = fieldnames(stim_segments);
-                    for seg_idx = 1:length(segment_names)
-                        all_segment_bounds(seg_idx, :) = stim_segments.(segment_names{seg_idx});
-                    end
-                    
-                    % Find the overall time range for this stimulation
-                    time_range = [min(all_segment_bounds(:,1)), max(all_segment_bounds(:,2))];
-                    
-                    % Calculate ISPC between each EEG channel and the stimulus (only for relevant time range)
-                    [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel_idx, time_range, stim_config);
-                    
-                    % Normalize ISPC values using the global ISPC value
-                    [norm_ispc_results, z_scored_ispc] = normalizeISPC(ispc_results, stim_segments, globalISPC, globalStd);
-                    
-                    % Store results for this stimulation
-                    all_ispc_results{stim_idx} = ispc_results;
-                    all_norm_ispc_results{stim_idx} = norm_ispc_results;
-                    all_z_scored_ispc{stim_idx} = z_scored_ispc;
-                    all_stim_segments{stim_idx} = stim_segments;
-                    
-                    % Create overview visualization (using the original data for reference)
-                    visualizeISPCOverview(EEG, ispc_results, phases, filtered_data, stim_segments, this_stim_samples, stim_channel_idx, stim_config);
-                    
-                    % Create visualizations with normalized data
-                    visualizeNormalizedISPC(EEG, ispc_results, norm_ispc_results, z_scored_ispc, stim_segments, stim_config);
-                    
-                    % Save results for this stimulation
-                    results_file = fullfile(stim_dir, 'results.mat');
-                    try
-                        save(results_file, 'ispc_results', 'norm_ispc_results', 'z_scored_ispc', 'globalISPC', 'globalStd', 'stim_segments', 'this_stim_samples', '-v7.3');
-                        fprintf('Saved results to: %s\n', results_file);
-                    catch err
-                        warning('Failed to save results: %s', err.message);
-                    end
-                    
-                    % Clean up figure windows
-                    close all;
+                % Skip this stimulation if it's too short
+                if stim_duration_seconds < config.min_stim_duration
+                    fprintf('Stimulation %d is too short (%.1f seconds). Minimum required: %.1f seconds. Skipping.\n', ...
+                        stim_idx, stim_duration_seconds, config.min_stim_duration);
+                    continue;
                 end
                 
-                % Create summary visualizations comparing all stimulations
-                createStimulationComparison(EEG, all_ispc_results, all_stim_segments, config);
+                fprintf('Stimulation duration: %.1f seconds (adequate for analysis)\n', stim_duration_seconds);
                 
-                % Create normalized aggregate topoplots across protocols
-                config.subject_id = whichSubj;
-                [norm_final_topos, pct_change_topos] = createNormalizedAggregateTopoplots(EEG, all_ispc_results, all_norm_ispc_results, all_stim_segments, config);
-
-
-                fprintf('\nAnalysis complete for subject %s, session %s. Results saved in %s\n', ...
-                    whichSubj, whichSess, config.results_dir);
-            else
-                % Process all stimulations together
-                fprintf('Processing all stimulation instances together for subject %s, session %s\n', ...
-                    whichSubj, whichSess);
+                % Create directory for this stimulation
+                stim_dir = fullfile(config.results_dir, ['stim_' num2str(stim_idx)]);
+                if ~exist(stim_dir, 'dir'), mkdir(stim_dir); end
                 
-                % Calculate ISPC between each EEG channel and the stimulus
-                [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel_idx, [], config);
+                % Extract segments for this stimulation
+                stim_segments = extractSegmentsForStimulation(segments, all_segment_names, stim_idx);
+                this_stim_samples = stim_samples(stim_idx, :);
                 
-                % Normalize ISPC values
-                [norm_ispc_results, z_scored_ispc] = normalizeISPC(ispc_results, segments, globalISPC, globalStd);
+                % Update config for this stimulation
+                stim_config = config;
+                stim_config.results_dir = stim_dir;
                 
-                % Create visualizations
-                visualizeISPCOverview(EEG, ispc_results, phases, filtered_data, segments, stim_samples, stim_channel_idx, config);
-                visualizeNormalizedISPC(EEG, ispc_results, norm_ispc_results, z_scored_ispc, segments, config);
+                % Calculate time range for this stimulation
+                time_range = calculateTimeRange(stim_segments);
+                
+                % Calculate and normalize ISPC
+                [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel_idx, time_range, stim_config);
+                [norm_ispc_results, z_scored_ispc] = normalizeISPC(ispc_results, stim_segments, globalISPC, globalStd);
+                
+                % Store results
+                all_ispc_results{stim_idx} = ispc_results;
+                all_norm_ispc_results{stim_idx} = norm_ispc_results;
+                all_z_scored_ispc{stim_idx} = z_scored_ispc;
+                all_stim_segments{stim_idx} = stim_segments;
+                
+                % Add to valid stimulation indices
+                valid_stim_indices = [valid_stim_indices, stim_idx];
+                
+                % Visualize results
+                visualizeISPCOverview(EEG, ispc_results, phases, filtered_data, stim_segments, this_stim_samples, stim_channel_idx, stim_config);
+                visualizeNormalizedISPC(EEG, ispc_results, norm_ispc_results, z_scored_ispc, stim_segments, stim_config);
                 
                 % Save results
-                save(fullfile(config.results_dir, 'results.mat'), 'ispc_results', 'norm_ispc_results', 'z_scored_ispc', 'globalISPC', 'globalStd', 'segments', 'stim_samples', '-v7.3');
+                save(fullfile(stim_dir, 'results.mat'), 'ispc_results', 'norm_ispc_results', 'z_scored_ispc', ...
+                    'globalISPC', 'globalStd', 'stim_segments', 'this_stim_samples', '-v7.3');
                 
-                fprintf('\nAnalysis complete for subject %s, session %s. Results saved to %s\n', ...
-                    whichSubj, whichSess, config.results_dir);
+                close all;
             end
             
+            % Check if we have any valid stimulations
+            if isempty(valid_stim_indices)
+                fprintf('No valid stimulations found for subject %s, session %s. Skipping comparison visualizations.\n', ...
+                    whichSubj, whichSess);
+                continue;
+            end
+            
+            % Filter out empty cells from results (for skipped stimulations)
+            valid_ispc_results = all_ispc_results(valid_stim_indices);
+            valid_norm_ispc_results = all_norm_ispc_results(valid_stim_indices);
+            valid_stim_segments = all_stim_segments(valid_stim_indices);
+            
+            % Create comparison visualizations with valid stimulations only
+            createStimulationComparison(EEG, valid_ispc_results, valid_stim_segments, config);
+            
+            % Create aggregate topoplots
+            config.subject_id = whichSubj;
+            [norm_final_topos, pct_change_topos] = createNormalizedAggregateTopoplots(EEG, valid_ispc_results, valid_norm_ispc_results, valid_stim_segments, config);
+            
+            % Save information about valid stimulations
+            save(fullfile(config.results_dir, 'valid_stimulations.mat'), 'valid_stim_indices');
+            
+            fprintf('Analysis complete for subject %s, session %s\n', whichSubj, whichSess);
+            
         catch err
-            % Log any errors but continue with next subject/session
-            fprintf('\nERROR processing subject %s, session %s: %s\n', ...
-                whichSubj, whichSess, err.message);
-            fprintf('Stack trace:\n');
+            fprintf('\nERROR processing subject %s, session %s: %s\n', whichSubj, whichSess, err.message);
             disp(err.stack);
         end
     end
 end
 
-fprintf('\n\n========== Analysis complete for all subjects ==========\n\n');
-fprintf('\n\n========== Interpolating subjects for consistent channel structure ==========\n\n');
+%% Run group-level analysis
+fprintf('\n\n========== Group Analysis Pipeline ==========\n\n');
 
 try
-    % Run interpolation to ensure consistent channel structure
+    % Interpolate subjects to standard electrode layout
     interpolateNormalizedSubjects(experiment_path, nights{1});
-    fprintf('Interpolation complete for all subjects.\n');
-catch err
-    fprintf('Error in subject interpolation: %s\n', err.message);
-    disp(err.stack);
-end
-
-fprintf('\n\n========== Running Group Analysis with Interpolated Data ==========\n\n');
-try
-    % Run group-level analysis with interpolated data
+    
+    % Run group-level analyses
     runGroupAnalysisWithInterpolatedData(experiment_path, nights{1});
-    runProtocolGroupAnalysisWithInterpolation(experiment_path, nights{1}, 5); % Analyze up to 5 stimulations
+    runProtocolGroupAnalysisWithInterpolation(experiment_path, nights{1}, 5);
     compareActiveAndShamTopoplots(experiment_path, nights{1});
-    fprintf('Group-level interpolated analysis complete.\n');
+    
+    fprintf('Group-level analysis complete.\n');
 catch err
-    fprintf('Error in group-level interpolated analysis: %s\n', err.message);
+    fprintf('Error in group analysis: %s\n', err.message);
     disp(err.stack);
 end
-
-% Display information about utility functions
-fprintf('\nUtility Functions Available:\n');
-fprintf('1. interpolateNormalizedSubjects(experiment_path, session_id)\n');
-fprintf('   - Interpolates subjects to ensure consistent channel structure\n');
-fprintf('2. runGroupAnalysisWithInterpolatedData(experiment_path, session_id)\n');
-fprintf('   - Runs group analysis with interpolated normalized data\n');
-fprintf('3. runProtocolGroupAnalysisWithInterpolation(experiment_path, session_id, max_stim)\n');
-fprintf('   - Runs protocol-specific group analysis with interpolated data\n');

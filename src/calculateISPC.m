@@ -23,11 +23,15 @@ function [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel
     phases = zeros(EEG.nbchan, EEG.pnts); % Phase angles
     filtered_data = zeros(EEG.nbchan, EEG.pnts); % Filtered signals
     
-    % Wavelet parameters
+    % Get wavelet parameters from config
     center_freq = config.stim_freq; % Analyze at the stimulation frequency
-    cycles = 8; % Number of cycles in the wavelet
+    
+    % Use configuration values if available, otherwise use defaults
+    cycles = config.wavelet_cycles; % Number of cycles in the wavelet
     wavelet_time = -2:1/EEG.srate:2; % Time for wavelet (4 seconds)
     s = cycles/(2*pi*center_freq); % Gaussian width
+    
+    fprintf('Using %d cycles for Morlet wavelet at %.1f Hz\n', cycles, center_freq);
     
     % Create Morlet wavelet
     wavelet = exp(2*1i*pi*center_freq.*wavelet_time) .* exp(-wavelet_time.^2./(2*s^2))/center_freq;
@@ -49,8 +53,18 @@ function [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel
     filtered_data(stim_channel_idx, start_idx:end_idx) = real(convolution_result_fft);
     
     % Sliding window parameters for ISPC calculation
-    window_size = round(EEG.srate * config.window_size); % Default: 2-second window
+    window_size = round(EEG.srate * config.window_size); % Window size in samples
     half_window = floor(window_size/2);
+    
+    % Get sliding step size from config (default to 1 if not specified)
+    if isfield(config, 'sliding_step')
+        step_size = config.sliding_step;
+    else
+        step_size = 1;
+    end
+    
+    fprintf('Using window size of %d samples (%.1f seconds) with step size of %d samples\n', ...
+        window_size, window_size/EEG.srate, step_size);
     
     % Calculate ISPC for each channel
     for chan_idx = 1:EEG.nbchan-1
@@ -68,8 +82,8 @@ function [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel
         % Calculate phase difference with stimulus
         phase_diff = phases(chan_idx, start_idx:end_idx) - phases(stim_channel_idx, start_idx:end_idx);
         
-        % Calculate ISPC using a sliding window
-        for t_offset = 1:n_samples
+        % Calculate ISPC using a sliding window with specified step size
+        for t_offset = 1:step_size:n_samples
             t = start_idx + t_offset - 1;
             
             % Define window boundaries
@@ -78,6 +92,32 @@ function [ispc_results, phases, filtered_data] = calculateISPC(EEG, stim_channel
             
             % Calculate ISPC for this window
             ispc_results(chan_idx, t) = abs(mean(exp(1i * phase_diff(win_start_offset:win_end_offset))));
+        end
+        
+        % For step sizes > 1, interpolate to ensure continuous ISPC values
+        if step_size > 1
+            % Find points where we calculated ISPC
+            calculated_indices = start_idx:step_size:end_idx;
+            calculated_values = ispc_results(chan_idx, calculated_indices);
+            
+            % Fill in missing values with linear interpolation
+            for t = start_idx:end_idx
+                if mod(t - start_idx, step_size) ~= 0 % If this wasn't a directly calculated point
+                    % Find nearest calculated points
+                    prev_idx = start_idx + floor((t - start_idx) / step_size) * step_size;
+                    next_idx = min(end_idx, prev_idx + step_size);
+                    
+                    % If we have both points, interpolate
+                    if prev_idx >= start_idx && next_idx <= end_idx
+                        prev_val = ispc_results(chan_idx, prev_idx);
+                        next_val = ispc_results(chan_idx, next_idx);
+                        
+                        % Linear interpolation
+                        weight = (t - prev_idx) / (next_idx - prev_idx);
+                        ispc_results(chan_idx, t) = prev_val * (1 - weight) + next_val * weight;
+                    end
+                end
+            end
         end
         
         if mod(chan_idx, 20) == 0

@@ -30,10 +30,13 @@ function config = setConfiguration(subject_id, session_id, experiment_path)
     
     % EEG data settings
     config.eeg_filename = fullfile(config.data_path, sprintf('Strength_%s_%s_forSW.set', subject_id, session_id));
-    config.target_srate = 25; % Target sampling rate in Hz
+    config.target_srate = 10; % Target sampling rate in Hz
     
     % Stimulus parameters
     config.stim_freq = 1; % 1Hz stimulation
+
+    % In setConfiguration.m, add this with the other analysis parameters
+    config.min_stim_duration = 60; % Minimum stimulation duration in seconds
     
     % Protocol definition - finds ALL occurrences of these markers
     config.protocol = struct();
@@ -42,9 +45,11 @@ function config = setConfiguration(subject_id, session_id, experiment_path)
     config.protocol.segment_duration = 45; % 45 seconds for each segment
     
     % Analysis parameters
-    config.window_size = 20; % 10-second window for ISPC calculation
+    config.window_size = 20;    % 20-second window for ISPC calculation
+    config.wavelet_cycles = 8;  % Number of cycles in the Morlet wavelet
+    config.sliding_step = 20;    % Step size for sliding window (in samples) - default: 1 sample
     
-    % Process all stimulation instances separately (true) or combine them (false)
+    % Process all stimulation instances separately
     config.process_all_instances = true;
     
     % Path to JSON files
