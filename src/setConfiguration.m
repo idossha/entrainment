@@ -20,42 +20,36 @@ function config = setConfiguration(subject_id, session_id, experiment_path)
     config.data_path = fullfile(experiment_path, subject_id, session_id);
     config.module_path = fullfile(code_path, 'src');
     config.assets_path = fullfile(code_path, 'src/assets');
+    config.utilities_path = fullfile(code_path, 'src/utils');
+    config.exclude_json = fullfile(config.assets_path, 'exclude.json');
+    config.regions_json = fullfile(config.assets_path, 'regions.json');
+    config.subject_condition_json = fullfile(config.assets_path, 'subject_condition.json');
     
     % Define results directory
     output_dir = fullfile(experiment_path, subject_id, session_id, 'output');
     config.results_dir = fullfile(output_dir, sprintf('entrainment_%s_%s', subject_id, session_id));
     
-    % Add path for utility functions
-    config.utilities_path = fullfile(code_path, 'src/utils');
-    
     % EEG data settings
     config.eeg_filename = fullfile(config.data_path, sprintf('Strength_%s_%s_forSW.set', subject_id, session_id));
-    config.target_srate = 10; % Target sampling rate in Hz
+    config.target_srate = 50; % Target sampling rate in Hz
     
     % Stimulus parameters
     config.stim_freq = 1; % 1Hz stimulation
-
-    % In setConfiguration.m, add this with the other analysis parameters
-    config.min_stim_duration = 60; % Minimum stimulation duration in seconds
     
     % Protocol definition - finds ALL occurrences of these markers
     config.protocol = struct();
     config.protocol.start_marker = 'stim start';
     config.protocol.end_marker = 'stim end';
+    config.min_stim_duration = 60; % Minimum stimulation duration in seconds
     config.protocol.segment_duration = 45; % 45 seconds for each segment
     
     % Analysis parameters
     config.window_size = 20;    % 20-second window for ISPC calculation
+    config.sliding_step = 20;   % Step size for sliding window (in samples) - default: 1 sample
     config.wavelet_cycles = 8;  % Number of cycles in the Morlet wavelet
-    config.sliding_step = 20;    % Step size for sliding window (in samples) - default: 1 sample
     
     % Process all stimulation instances separately
     config.process_all_instances = true;
-    
-    % Path to JSON files
-    config.exclude_json = fullfile(config.assets_path, 'exclude.json');
-    config.regions_json = fullfile(config.assets_path, 'regions.json');
-    config.subject_condition_json = fullfile(config.assets_path, 'subject_condition.json');
     
     % Electrode positions file
     % Prioritize the assets version of the file, then fall back to utils if needed
@@ -83,17 +77,7 @@ function config = setConfiguration(subject_id, session_id, experiment_path)
         end
         fprintf('Created results directory: %s\n', config.results_dir);
     end
-    
-    % Create utilities directory if it doesn't exist
-    if isfield(config, 'utilities_path') && ~exist(config.utilities_path, 'dir')
-        [success, msg] = mkdir(config.utilities_path);
-        if ~success
-            warning('Failed to create utilities directory %s: %s', config.utilities_path, msg);
-        else
-            fprintf('Created utilities directory: %s\n', config.utilities_path);
-        end
-    end
-    
+   
     % Parse JSON configuration files
     config = parseJSONConfig(config);
 end

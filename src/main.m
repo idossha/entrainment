@@ -24,6 +24,7 @@ for subjIdx = 1:length(subjects)
             fprintf('\n\n========== Processing Subject %s, Session %s ==========\n\n', whichSubj, whichSess);
             
             eeg_filename = fullfile(experiment_path, whichSubj, whichSess, sprintf('Strength_%s_%s_forSW.set', whichSubj, whichSess));
+
             if ~exist(eeg_filename, 'file')
                 fprintf('File not found: %s. Skipping this subject/session.\n', eeg_filename);
                 continue;
@@ -32,10 +33,12 @@ for subjIdx = 1:length(subjects)
             config = setConfiguration(whichSubj, whichSess, experiment_path);
             addpath(config.src_path, config.module_path, config.utilities_path);
             
+            % load data, downsample if needed and add stimulus signal
             EEG = loadEEGData(config.eeg_filename, config.target_srate);
             [segments, stim_samples] = findEvents(EEG, config);
             [EEG, stim_channel_idx] = addStimulusSignal(EEG, config.stim_freq);
             
+            % calculate global ISPC and save
             [globalISPC, globalStd] = calculateGlobalISPC(EEG, stim_channel_idx, config);
             save(fullfile(config.results_dir, 'global_ispc.mat'), 'globalISPC', 'globalStd');
             
