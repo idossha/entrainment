@@ -47,7 +47,9 @@ function config = setConfiguration(subject_id, session_id, experiment_path)
     config.window_size = 20;    % 20-second window for ISPC calculation
     config.sliding_step = 20;   % Step size for sliding window (in samples) - default: 1 sample
     config.wavelet_cycles = 8;  % Number of cycles in the Morlet wavelet
-    
+    config.post_stim_exclusion = 45; % Time in seconds to exclude after stim end marker
+
+
     % Process all stimulation instances separately
     config.process_all_instances = true;
     

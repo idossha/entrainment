@@ -6,8 +6,8 @@ clear all; close all;
 
 %% Define experiment settings
 experiment_path = '/Volumes/Ido/analyze';
-% subjects = {'101', '102','107','108','109','110','111','112','114','115','116','117','119','120','121','122','127','132'};
-subjects = {'101'};
+subjects = { '102','107','108','109','110','111','112','114','115','116','117','119','120','121','122','127','132'};
+% subjects = {'101'};
 nights = {'N1'};
 
 %% Add EEGLAB path and initialize
@@ -38,9 +38,8 @@ for subjIdx = 1:length(subjects)
             [segments, stim_samples] = findEvents(EEG, config);
             [EEG, stim_channel_idx] = addStimulusSignal(EEG, config.stim_freq);
             
-            % calculate global ISPC and save
-            [globalISPC, globalStd] = calculateGlobalISPC(EEG, stim_channel_idx, config);
-            save(fullfile(config.results_dir, 'global_ispc.mat'), 'globalISPC', 'globalStd');
+             % Calculate global ISPC, channel ISPC, time ISPC, and save with histograms
+            [globalISPC, channelISPC, timeISPC, globalStd, nonStimGlobalISPC, nonStimChannelISPC, nonStimTimeISPC, nonStimGlobalStd] = calculateGlobalISPC(EEG, stim_channel_idx, config);
             
             num_stims = size(stim_samples, 1);
             fprintf('Processing %d stimulation instances for subject %s, session %s\n', num_stims, whichSubj, whichSess);
